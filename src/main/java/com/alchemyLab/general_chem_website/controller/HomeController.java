@@ -29,4 +29,9 @@ public class HomeController {
     public String user() {
         return "index.html";
     }
+
+    @GetMapping("/signup")
+    public String signUp() {
+        return "index.html";
+    }
 }
