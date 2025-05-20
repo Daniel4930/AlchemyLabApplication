@@ -1,5 +1,7 @@
 package com.alchemyLab.general_chem_website.controller;
 
+import com.alchemyLab.general_chem_website.model.ResponseForgotPassword;
+import com.alchemyLab.general_chem_website.model.ResponseResetPassword;
 import com.alchemyLab.general_chem_website.model.ResponseUserInfo;
 import com.alchemyLab.general_chem_website.model.SignUpInfo;
 import com.alchemyLab.general_chem_website.service.UserService;
@@ -25,5 +27,15 @@ public class DatabaseController {
     @PostMapping("/auth/signin")
     public ResponseEntity<Map<String, Object>> signInUser(@RequestBody ResponseUserInfo payload) {
         return userService.loginUser(payload);
+    }
+
+    @PostMapping("/auth/forgot_password")
+    public ResponseEntity<Map<String, Object>> forgotPassword(@RequestBody ResponseForgotPassword payload) {
+        return userService.forgotPasswordRequest(payload);
+    }
+
+    @PostMapping("/reset")
+    public ResponseEntity<Map<String, Object>> handleResetPassword(@RequestBody ResponseResetPassword payload) {
+        return userService.resetPassword(payload);
     }
 }

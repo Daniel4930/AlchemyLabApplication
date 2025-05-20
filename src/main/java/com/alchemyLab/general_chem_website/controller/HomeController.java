@@ -34,4 +34,14 @@ public class HomeController {
     public String signUp() {
         return "index.html";
     }
+
+    @GetMapping("/forgot-password")
+    public String forgotPassword() {
+        return "index.html";
+    }
+
+    @GetMapping("/reset")
+    public String showResetPasswordForm() {
+        return "index.html";
+    }
 }
