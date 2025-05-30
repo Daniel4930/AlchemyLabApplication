@@ -19,22 +19,22 @@ public class DatabaseController {
     @Autowired
     private UserService userService;
 
-    @PostMapping("/auth/signup")
+    @PostMapping("/api/auth/signup")
     public ResponseEntity<Map<String, Object>> signUpUser(@RequestBody SignUpInfo payload) {
         return userService.registerUser(payload);
     }
 
-    @PostMapping("/auth/signin")
+    @PostMapping("/api/auth/signin")
     public ResponseEntity<Map<String, Object>> signInUser(@RequestBody ResponseUserInfo payload) {
         return userService.loginUser(payload);
     }
 
-    @PostMapping("/auth/forgot_password")
+    @PostMapping("/api/auth/forgot_password")
     public ResponseEntity<Map<String, Object>> forgotPassword(@RequestBody ResponseForgotPassword payload) {
         return userService.forgotPasswordRequest(payload);
     }
 
-    @PostMapping("/reset")
+    @PostMapping("/api/reset")
     public ResponseEntity<Map<String, Object>> handleResetPassword(@RequestBody ResponseResetPassword payload) {
         return userService.resetPassword(payload);
     }

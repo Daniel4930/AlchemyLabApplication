@@ -7,33 +7,23 @@ import com.alchemyLab.general_chem_website.model.ResponseUserInfo;
 import com.alchemyLab.general_chem_website.model.SignUpInfo;
 import com.alchemyLab.general_chem_website.model.User;
 import com.alchemyLab.general_chem_website.util.ResponseUtil;
-import com.google.api.client.auth.openidconnect.IdToken.Payload;
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
-import com.google.api.client.http.javanet.NetHttpTransport;
-import com.google.api.client.json.gson.GsonFactory;
-
-import jakarta.annotation.PostConstruct;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeAction;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValueUpdate;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
-import java.io.IOException;
-import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -44,61 +34,34 @@ public class UserService {
     @Autowired
     private EmailService emailService;
 
-    @Value("${aws.dynamodb.tableName}")
-    private String tableName;
-    
-    @Value("${aws.service.region}")
-    private String awsRegion;
-    
-    private Region region;
+    @Autowired
+    private DatabaseService databaseService;
+
     private String keyName = "email";
-
-    @PostConstruct
-    public void init() {
-        region = Region.of(awsRegion);
-    }
-
-    private DynamoDbClient startDatabaseClient() {
-        return DynamoDbClient.builder().region(region).build();
-    }
-
-    private void writeDataToDynamoDb(PutItemRequest request) {
-        try (DynamoDbClient db = startDatabaseClient()) {
-            db.putItem(request);
-        } catch (DynamoDbException error) {
-            System.err.printf("Error from %s: %s", error.getClass().getName(), error.getMessage());
-        }
-    }
-
-    private Map<String, AttributeValue> getDataFromDynamoDb(GetItemRequest request) {
-    try (DynamoDbClient db = startDatabaseClient()) {
-        Map<String, AttributeValue> item = db.getItem(request).item();
-        return item != null ? item : new HashMap<>();
-    } catch (DynamoDbException error) {
-        System.err.println("DynamoDB error: " + error.getMessage());
-        return new HashMap<>();
-    }
-}
-
+    private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     public ResponseEntity<Map<String, Object>> registerUser(SignUpInfo payload) {
         boolean emailExist = checkUserExist(payload.getEmail());
 
-        if (!emailExist) {
+        if (emailExist) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ResponseUtil.createResponse("Email already exists"));
         }
 
-        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
         String hashedPassword = encoder.encode(payload.getPassword());
 
-        Map<String, AttributeValue> itemValues = new HashMap<>();
-        itemValues.put(keyName, AttributeValue.builder().s(payload.getEmail()).build());
-        itemValues.put("name", AttributeValue.builder().s(payload.getName()).build());
-        itemValues.put("password", AttributeValue.builder().s(hashedPassword).build());
+        Map<String, Object> items = new HashMap<>();
+        items.put(keyName, payload.getEmail());
+        items.put("name", payload.getName());
+        items.put("password", hashedPassword);
 
-        PutItemRequest request = PutItemRequest.builder().tableName(tableName).item(itemValues).build();
-        writeDataToDynamoDb(request);
+        Map<String, AttributeValue> itemValues = databaseService.createItemsForRequest(items);
+
+        PutItemRequest request = PutItemRequest.builder()
+                .tableName(databaseService.getTableName())
+                .item(itemValues)
+                .build();
+        databaseService.writeDataToDynamoDb(request);
 
         User user = new User();
         user.setEmail(payload.getEmail());
@@ -109,13 +72,18 @@ public class UserService {
         return ResponseEntity.ok(response);
     }
 
-    private boolean checkUserExist(String emailVal) {
-        Map<String, AttributeValue> key = new HashMap<>();
-        key.put(keyName, AttributeValue.builder().s(emailVal).build());
+    public boolean checkUserExist(String emailVal) {
+        Map<String, Object> items = new HashMap<>();
+        items.put(keyName, emailVal);
 
-        GetItemRequest request = GetItemRequest.builder().tableName(tableName).key(key).build();
+        Map<String, AttributeValue> key = databaseService.createItemsForRequest(items);
 
-        Map<String, AttributeValue> item = getDataFromDynamoDb(request);
+        GetItemRequest request = GetItemRequest.builder()
+                .tableName(databaseService.getTableName())
+                .key(key)
+                .build();
+
+        Map<String, AttributeValue> item = databaseService.getDataFromDynamoDb(request);
         if (item == null || item.isEmpty()) {
             return false;
         }
@@ -123,13 +91,15 @@ public class UserService {
     }
 
     public ResponseEntity<Map<String, Object>> loginUser(ResponseUserInfo payload) {
-        Map<String, AttributeValue> key = new HashMap<>();
-        key.put(keyName, AttributeValue.builder().s(payload.getEmail()).build());
-        System.out.println(payload.getEmail());
-        System.out.println(payload.getPassword());
+        Map<String, Object> items = new HashMap<>();
+        items.put(keyName, payload.getEmail());
+        Map<String, AttributeValue> key = databaseService.createItemsForRequest(items);
 
-        GetItemRequest request = GetItemRequest.builder().tableName(tableName).key(key).build();
-        Map<String, AttributeValue> item = getDataFromDynamoDb(request);
+        GetItemRequest request = GetItemRequest.builder()
+                .tableName(databaseService.getTableName())
+                .key(key)
+                .build();
+        Map<String, AttributeValue> item = databaseService.getDataFromDynamoDb(request);
 
         if (item == null || item.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -137,7 +107,6 @@ public class UserService {
         }
 
         String storedHashedPassword = item.get("password").s();
-        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
         if (!encoder.matches(payload.getPassword(), storedHashedPassword)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -153,62 +122,13 @@ public class UserService {
         return ResponseEntity.ok(response);
     }
 
-    public ResponseEntity<Map<String, Object>> handleGoogleOAuthLogin(String credentialToken) {
-        try {
-            User user = verifyGoogleToken(credentialToken);
-
-            try (DynamoDbClient db = startDatabaseClient()) {
-                boolean emailExist = checkUserExist(user.getEmail());
-
-                if (!emailExist) {
-                    // Register new user
-                    Map<String, AttributeValue> itemValues = new HashMap<>();
-                    itemValues.put(keyName, AttributeValue.builder().s(user.getEmail()).build());
-                    itemValues.put("name", AttributeValue.builder().s(user.getName()).build());
-                    itemValues.put("password", AttributeValue.builder().s("GOOGLE_AUTH").build()); // placeholder
-
-                    PutItemRequest request = PutItemRequest.builder().tableName(tableName).item(itemValues).build();
-                    writeDataToDynamoDb(request);
-                }
-
-                Map<String, Object> response = ResponseUtil.createResponse("Credential received");
-                response.put("data", user);
-                return ResponseEntity.ok(response);
-            }
-        } catch (GeneralSecurityException error) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(ResponseUtil.createResponse("Invalid token or permission error"));
-        } catch (IOException error) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(ResponseUtil.createResponse("Network error or service unavailable"));
-        }
-    }
-
-    private User verifyGoogleToken(String token) throws IOException, GeneralSecurityException {
-        NetHttpTransport transport = new NetHttpTransport();
-        GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(transport, GsonFactory.getDefaultInstance())
-                .setAudience(Collections.singletonList("892978279204-it8457gcn5vipos11epkeemnpfpv49vk.apps.googleusercontent.com"))
-                .build();
-        GoogleIdToken idToken = verifier.verify(token);
-
-        Payload payload = idToken.getPayload();
-        User user = new User();
-        user.setEmail((String) payload.get("email"));
-        user.setName((String) payload.get("name"));
-        return user;
-    }
-
     public ResponseEntity<Map<String, Object>> forgotPasswordRequest(ResponseForgotPassword payload) {
-        try(DynamoDbClient db = startDatabaseClient()) {
+        try(DynamoDbClient db = databaseService.startDatabaseClient()) {
             boolean emailExist = checkUserExist(payload.getEmail());
 
             if (emailExist) {
-                Map<String, Object> response = ResponseUtil.createResponse("Email exists");
-
                 ResetPasswordLink data = generateResetPasswordLink("email", payload.getEmail());
-                emailService.sendEmail(payload.getEmail(), data.getLink());
-
-                return ResponseEntity.ok(response);
+                return emailService.sendEmail(payload.getEmail(), data.getLink());
             } else {
                 Map<String, Object> response = ResponseUtil.createResponse("Email does not exist");
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
@@ -218,7 +138,7 @@ public class UserService {
 
     private ResetPasswordLink generateResetPasswordLink(String keyName, String keyValue) {
         UUID token = UUID.randomUUID();
-        final String originalLink = "http://localhost:8080/reset?token=";
+        final String originalLink = "https://chemlesson.cc/reset?token=";
         LocalDateTime expireDate = LocalDateTime.now().plusMinutes(30);
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -226,51 +146,72 @@ public class UserService {
         data.setLink(originalLink + token + "&email=" + keyValue);
         data.setExpireTime(formatter.format(expireDate));
 
-        Map<String, AttributeValue> item = new HashMap<>();
-        Map<String, AttributeValue> dataObject = new HashMap<>();
+        Map<String, Object> items = new HashMap<>();
+        items.put(keyName, keyValue);
+        Map<String, AttributeValue> keyItem = databaseService.createItemsForRequest(items);
 
-        dataObject.put("token", AttributeValue.builder().s(token.toString()).build());
-        dataObject.put("expireDate", AttributeValue.builder().s(data.getExpireTime()).build());
+        items.clear();
+        items.put("token", token.toString());
+        items.put("expireDate", data.getExpireTime());
+        Map<String, AttributeValue> dataObject = databaseService.createItemsForRequest(items);
 
-        item.put(keyName, AttributeValue.builder().s(keyValue).build());
-        item.put("resetPassword", AttributeValue.builder().m(dataObject).build());
-        PutItemRequest request = PutItemRequest.builder().tableName(tableName).item(item).build();
-        writeDataToDynamoDb(request);
+        Map<String, AttributeValueUpdate> updatedValue = new HashMap<>();
+        updatedValue.put("resetPassword", AttributeValueUpdate.builder()
+                .value(AttributeValue.builder().m(dataObject).build())
+                .action(AttributeAction.PUT)
+                .build());
+
+        UpdateItemRequest request = UpdateItemRequest.builder()
+                .tableName(databaseService.getTableName())
+                .key(keyItem)
+                .attributeUpdates(updatedValue)
+                .build();
+        databaseService.updateDataFromDynamoDb(request);
 
         return data;
     }
 
     public ResponseEntity<Map<String, Object>> resetPassword(ResponseResetPassword payload) {
-        Map<String, AttributeValue> key = new HashMap<>();
-        key.put("email", AttributeValue.builder().s(payload.getEmail()).build());
+        Map<String, Object> items = new HashMap<>();
+        items.put(keyName, payload.getEmail());
 
-        GetItemRequest getRequest = GetItemRequest.builder().tableName(tableName).key(key).build();
+        Map<String, AttributeValue> keyItem = databaseService.createItemsForRequest(items);
 
-        Map<String, AttributeValue> result = getDataFromDynamoDb(getRequest);        
+        GetItemRequest getRequest = GetItemRequest
+                .builder()
+                .tableName(databaseService.getTableName())
+                .key(keyItem)
+                .build();
+
+        Map<String, AttributeValue> result = databaseService.getDataFromDynamoDb(getRequest);        
         String token = result.get("resetPassword").m().get("token").s();
         String expireDate = result.get("resetPassword").m().get("expireDate").s();
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         LocalDateTime expireTime = LocalDateTime.parse(expireDate, formatter);
         LocalDateTime currentTime = LocalDateTime.now();
-        Duration duration = Duration.between(currentTime, expireTime);
+        Duration duration = Duration.between(expireTime, currentTime);
         long minutes = duration.toMinutes();
         
         //Link expires after 30 minutes
         if (!token.equals(payload.getToken()) || minutes > 30) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ResponseUtil.createResponse("Link already expired or not valid"));
         }
-        
-        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
-        String hashedPassword = encoder.encode(payload.getPassword());
-        Map<String, AttributeValue> dataObject = new HashMap<>();
-        dataObject.put("token", AttributeValue.builder().s("").build());
-        dataObject.put("expireDate", AttributeValue.builder().s("").build());
 
-        key.put("password", AttributeValue.builder().s(hashedPassword).build());
-        key.put("resetPassword", AttributeValue.builder().m(dataObject).build());
-        PutItemRequest putRequest = PutItemRequest.builder().tableName(tableName).item(result).build();
-        writeDataToDynamoDb(putRequest);
+        String hashedPassword = encoder.encode(payload.getPassword());
+
+        Map<String, AttributeValueUpdate> updatedValues = new HashMap<>();
+        updatedValues.put("password", AttributeValueUpdate.builder()
+                .value(AttributeValue.builder().s(hashedPassword).build())
+                .action(AttributeAction.PUT)
+                .build());
+        
+        UpdateItemRequest updateRequest = UpdateItemRequest.builder()
+                .tableName(databaseService.getTableName())
+                .key(keyItem)
+                .attributeUpdates(updatedValues)
+                .build();
+        databaseService.updateDataFromDynamoDb(updateRequest);
 
         return ResponseEntity.ok(ResponseUtil.createResponse("Password has been reset"));
     }

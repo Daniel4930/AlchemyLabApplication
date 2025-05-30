@@ -19,7 +19,7 @@ public class GlobalExceptionHandler {
     //DynamoDb Errors handling
     @ExceptionHandler(DynamoDbException.class)
     public ResponseEntity<Map<String, Object>> handleDynamoDbException(DynamoDbException ex) {
-        System.err.printf("DynamoException class: %s\nError message: %s\n", ex.getClass().getName(), ex.getMessage());
+        System.err.printf("DynamoException class: %s. Error message: %s\n", ex.getClass().getName(), ex.getMessage());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ResponseUtil.createResponse("Server error: Unexpected error"));
     }
@@ -35,14 +35,14 @@ public class GlobalExceptionHandler {
     //Base error case
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGenericException(Exception ex) {
-        System.err.printf("Exception error class: %s\nError message: %s\n", ex.getClass().getName(), ex.getMessage());
+        System.err.printf("Exception error class: %s. Error message: %s\n", ex.getClass().getName(), ex.getMessage());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ResponseUtil.createResponse("Server error: Unexpected error"));
     }
 
     @ExceptionHandler(IOException.class)
     public ResponseEntity<Map<String, Object>> handleNetworkError(IOException ex) {
-        System.err.printf("Network error class: %s\nError message: %s\n", ex.getClass().getName(), ex.getMessage());
+        System.err.printf("Network error class: %s. Error message: %s\n", ex.getClass().getName(), ex.getMessage());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(ResponseUtil.createResponse("Server error: Network failed"));
     }

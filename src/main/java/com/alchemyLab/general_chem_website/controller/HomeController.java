@@ -5,43 +5,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class HomeController {
 
-    @GetMapping("/")
-    public String home() {
-        return "index.html";
-    }
-
-    @GetMapping("/contact")
-    public String contact() {
-        return "index.html";
-    }
-
-    @GetMapping("/lesson")
-    public String lesson() {
-        return "index.html";
-    }
-
-    @GetMapping("/login")
-    public String login() {
-        return "index.html";
-    }
-
-    @GetMapping("/user")
-    public String user() {
-        return "index.html";
-    }
-
-    @GetMapping("/signup")
-    public String signUp() {
-        return "index.html";
-    }
-
-    @GetMapping("/forgot-password")
-    public String forgotPassword() {
-        return "index.html";
-    }
-
-    @GetMapping("/reset")
-    public String showResetPasswordForm() {
+    @GetMapping({"/", "/contact", "/lesson", "/login", "/user", "/signup", 
+    "/forgot-password", "/reset", "/lesson/**", "/lesson/question/**"})
+    public String handleRouting() {
         return "index.html";
     }
 }
