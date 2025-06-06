@@ -1,9 +1,9 @@
 HELP.md
+script.sh
 target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-script.sh
 
 ### STS ###
 .apt_generated
